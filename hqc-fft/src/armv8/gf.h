@@ -30,5 +30,7 @@ void gf_generate(uint16_t *exp, uint16_t *log, const int16_t m);
 uint16_t gf_mul(uint16_t a, uint16_t b);
 uint16_t gf_square(uint16_t a);
 uint16_t gf_inverse(uint16_t a);
+void gf_inverse_all(uint16_t *a,uint16_t *out);
+
 
 #endif

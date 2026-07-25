@@ -103,3 +103,52 @@ uint16_t gf_inverse(uint16_t a) {
     return inv;
 }
 
+void gf_inverse_all(uint16_t *a,uint16_t *out) {
+    
+    uint16_t pref[PARAM_DELTA];
+    uint16_t suf[PARAM_DELTA];
+    uint16_t a_mask[PARAM_DELTA];
+    uint16_t x;
+    
+    for(int i = 0; i < PARAM_DELTA; i++) {
+        uint16_t s = 0;
+        for(int j =0;j<8;j++)
+            s |= (a[i] >> j) & 0x01;
+        s = 1 - s;
+        a_mask[i] = a[i] ^ s; 
+    }
+
+    uint16_t ac = a_mask[0];
+
+    for(int i=1;i<PARAM_DELTA;i++){
+        a_mask[i] = (a[i] == 0);
+        a_mask[i] = a_mask[i] ^ a[i];
+    }
+
+    for(int i=1;i<PARAM_DELTA;i++){
+        ac = gf_mul(a_mask[i],ac);
+    }
+
+    x = gf_inverse(ac);
+    
+
+    pref[0] = x;
+    for(int i=1;i<PARAM_DELTA;i++){
+        pref[i] = gf_mul(pref[i-1], a_mask[i-1]);
+    }
+
+    suf[PARAM_DELTA-1] = 1;
+    for(int i=PARAM_DELTA-2;i>=0;i--){
+        suf[i] = gf_mul(suf[i+1], a_mask[i+1]);
+    }
+
+    for(int i = 0; i < PARAM_DELTA; i++) {
+        uint16_t s = 0;
+        for(int j =0;j<8;j++)
+            s |= (a[i] >> j) & 0x01;   
+        out[i] = gf_mul(pref[i], suf[i]); 
+        s = 0 - s;
+        out[i] = out[i] & s; 
+    }
+
+}

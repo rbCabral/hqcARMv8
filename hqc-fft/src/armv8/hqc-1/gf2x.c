@@ -57,33 +57,103 @@ void reduce(uint64_t *o, const uint64_t *a) {
     o[VEC_N_SIZE_64-1] &= BITMASK(PARAM_N, 64);
 }
   
- 
- 
- /**
-  * @brief Compute C(x) = A(x)*B(x)
-  * A(x) and B(x) are stored in 128-bit registers
-  * This function computes A(x)*B(x) using Karatsuba
-  *
-  * @param[out] C Pointer to the result
-  * @param[in] A Pointer to the polynomial A(x)
-  * @param[in] B Pointer to the polynomial B(x)
-  */
-void schoolbook(uint64_t *c, const uint64_t * a, const uint64_t *b, int length)
-{
-    poly128_t temp;
-    poly64x2_t result;
-    for(int i = 0; i < length; i++)
-    {
-        for(int j = 0; j < length; j++)
-        {
-            temp = vmull_p64((poly64_t)a[i], (poly64_t)b[j]);
-            result = vreinterpretq_p64_p128(temp);
-            c[i+j] ^= (uint64_t)vgetq_lane_p64(result, 0);
-            c[i+j+1] ^= (uint64_t)vgetq_lane_p64(result, 1);
-        }
-    }
-    return;
+#define Combine(X,Y) \
+    vgetq_lane_p64(vreinterpretq_p64_p128(X), 0) ^ \
+    vgetq_lane_p64(vreinterpretq_p64_p128(Y), 1)
+
+  
+static inline void karat_mult_square_4(uint64_t *c, const uint64_t *a, const uint64_t *b) {
+    poly128_t temp_f1 = vmull_p64(a[3], b[3]);
+    poly128_t temp_f2 = vmull_p64(a[2], b[2]);
+    poly128_t temp_f3 = vmull_p64((a[3]^a[2]) , (b[3]^b[2]));
+    temp_f3 ^= (temp_f1 ^ temp_f2);
+
+    poly128_t temp_f4 = vmull_p64(a[1], b[1]);
+    poly128_t temp_f5 = vmull_p64(a[0], b[0]);
+    poly128_t temp_f6 = vmull_p64((a[1]^a[0]) , (b[0]^b[1]));
+    temp_f6 ^= (temp_f4 ^ temp_f5);
+
+    poly128_t temp_f7 = vmull_p64((a[1]^a[3]), (b[1] ^ b[3]));
+    poly128_t temp_f8 = vmull_p64((a[0]^a[2]), (b[0] ^ b[2]));
+    poly128_t temp_f9 = vmull_p64((a[0]^a[1]^a[2]^a[3]), (b[0]^b[1]^b[2]^b[3]));
+    temp_f9 ^= (temp_f7 ^ temp_f8);
+
+    temp_f7 ^= (temp_f1 ^ temp_f4);
+    temp_f8 ^= (temp_f2 ^ temp_f5);
+    temp_f9 ^= (temp_f3 ^ temp_f6);
+    temp_f2 ^= temp_f7;
+    temp_f4 ^= temp_f8;
+    
+  c[7] = vgetq_lane_p64(vreinterpretq_p64_p128(temp_f1), 1);
+  c[6] = Combine(temp_f1, temp_f3);
+  c[5] = Combine(temp_f3, temp_f2);
+  c[4] = Combine(temp_f2, temp_f9);
+  c[3] = Combine(temp_f9, temp_f4);
+  c[2] = Combine(temp_f4, temp_f6);
+  c[1] = Combine(temp_f6, temp_f5);
+  c[0] = vgetq_lane_p64(vreinterpretq_p64_p128(temp_f5), 0);
 }
+
+static inline void karat_mult_square_8(uint64_t *c, const uint64_t *a, const uint64_t *b) {
+    uint64_t tempa[4], tempb[4], temp[8];
+
+    for(int i = 0; i < 4; i++) {
+        tempa[i] = a[i] ^ a[i+4];
+        tempb[i] = b[i] ^ b[i+4];
+    }
+
+    karat_mult_square_4(c, a, b);                
+    karat_mult_square_4(c + 8, a + 4, b + 4);    
+    karat_mult_square_4(temp, tempa, tempb);     
+
+    for(int i = 0; i < 8; i++) {
+        temp[i] ^= (c[i] ^ c[i+8]);
+    }
+    for(int i = 0; i < 8; i++) {
+        c[i+4] ^= temp[i];
+    }
+}
+
+static inline void karat_mult_square_16(uint64_t *c, const uint64_t *a, const uint64_t *b) {
+    uint64_t tempa[8], tempb[8], temp[16];
+
+    for(int i = 0; i < 8; i++) {
+        tempa[i] = a[i] ^ a[i+8];
+        tempb[i] = b[i] ^ b[i+8];
+    }
+
+    karat_mult_square_8(c, a, b);
+    karat_mult_square_8(c + 16, a + 8, b + 8);
+    karat_mult_square_8(temp, tempa, tempb);
+
+    for(int i = 0; i < 16; i++) {
+        temp[i] ^= (c[i] ^ c[i+16]);
+    }
+    for(int i = 0; i < 16; i++) {
+        c[i+8] ^= temp[i];
+    }
+}
+
+static inline void karat_mult_square_32(uint64_t *c, const uint64_t *a, const uint64_t *b) {
+    uint64_t tempa[16], tempb[16], temp[32];
+
+    for(int i = 0; i < 16; i++) {
+        tempa[i] = a[i] ^ a[i+16];
+        tempb[i] = b[i] ^ b[i+16];
+    }
+
+    karat_mult_square_16(c, a, b);
+    karat_mult_square_16(c + 32, a + 16, b + 16);
+    karat_mult_square_16(temp, tempa, tempb);
+
+    for(int i = 0; i < 32; i++) {
+        temp[i] ^= (c[i] ^ c[i+32]);
+    }
+    for(int i = 0; i < 32; i++) {
+        c[i+16] ^= temp[i];
+    }
+}
+
 void karat_mult_square( uint64_t *c, const uint64_t * a, const uint64_t *b, int length)
   {   
   
@@ -100,6 +170,7 @@ void karat_mult_square( uint64_t *c, const uint64_t * a, const uint64_t *b, int 
       }
       else if(length == 4)
       {
+        // karat_mult_square_4(c, a, b);
           poly128_t temp_f1 = vmull_p64(a[3], b[3]);
           poly128_t temp_f2 = vmull_p64(a[2], b[2]);
           poly128_t temp_f3 = vmull_p64((a[3]^a[2]) , (b[3]^b[2]));
@@ -189,13 +260,21 @@ void karat_mult3(uint64_t *Out, uint64_t *A, uint64_t *B) {
          bb02[i] = b0[i] ^ b2[i];
      }
  
-     karat_mult_square(D0, a0, b0, T_3W_64);
-     karat_mult_square(D1, a1, b1, T_3W_64);
-     karat_mult_square(D2, a2, b2, T_3W_64);
+     karat_mult_square_32(D0, a0, b0);
+     karat_mult_square_32(D1, a1, b1);
+     karat_mult_square_32(D2, a2, b2);
  
-     karat_mult_square(D3, aa01, bb01, T_3W_64);
-     karat_mult_square(D4, aa02, bb02, T_3W_64);
-     karat_mult_square(D5, aa12, bb12, T_3W_64);
+     karat_mult_square_32(D3, aa01, bb01);
+     karat_mult_square_32(D4, aa02, bb02);
+     karat_mult_square_32(D5, aa12, bb12);
+
+    //  karat_mult_square(D0, a0, b0, T_3W_64);
+    //  karat_mult_square(D1, a1, b1, T_3W_64);
+    //  karat_mult_square(D2, a2, b2, T_3W_64);
+ 
+    //  karat_mult_square(D3, aa01, bb01, T_3W_64);
+    //  karat_mult_square(D4, aa02, bb02, T_3W_64);
+    //  karat_mult_square(D5, aa12, bb12, T_3W_64);
  
      for(int32_t i = 0; i < T_3W_64; i++) {
          int32_t j = i + T_3W_64;

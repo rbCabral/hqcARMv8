@@ -130,10 +130,10 @@ static const uint16x8_t alpha_ij256_2[90] = {
  * Coefficients of polynomial G
  * stored in 256-bit values
  **/
-static const uint16x8_t param256[4] = {
-    {89,69,153,116,176,117,111,75}, {73,233,242,233,65,210,21,139},
-    {103,173,67,118,105,210,174,110}, {74,69,228,82,255,181,1, 0}
-};
+// static const uint16x8_t param256[4] = {
+//     {89,69,153,116,176,117,111,75}, {73,233,242,233,65,210,21,139},
+//     {103,173,67,118,105,210,174,110}, {74,69,228,82,255,181,1, 0}
+// };
 
 static const uint8_t gen_mat[16*32] __attribute__((aligned(32)))  = {
 0x59, 0x45, 0x99, 0x74, 0xb0, 0x75, 0x6f, 0x4b, 0x49, 0xe9, 0xf2, 0xe9, 0x41, 0xd2, 0x15, 0x8b, 0x67, 0xad, 0x43, 0x76, 0x69, 0xd2, 0xae, 0x6e, 0x4a, 0x45, 0xe4, 0x52, 0xff, 0xb5, 0x0, 0x0, 
@@ -432,6 +432,77 @@ static void compute_z_poly(uint16_t *z, const uint16_t *sigma, uint16_t degree, 
     }
 }
 
+static inline void calcNum_neon_16x(const uint8_t *inv_j, const uint16_t *z, uint8_t *out, int start_i) {
+    
+    uint8x16_t inv = vld1q_u8(&inv_j[start_i]);
+    
+    uint8x16_t inv2 = _gf256v_mul_neon2(inv,  inv);
+    uint8x16_t inv4 = _gf256v_mul_neon2(inv2, inv2);
+    uint8x16_t inv8 = _gf256v_mul_neon2(inv4, inv4);
+
+    uint8x16_t ones = vdupq_n_u8(1);
+
+    uint8x16_t a0 = veorq_u8(ones,                     _gf256v_mul_neon2(vdupq_n_u8(z[1]&0xff),  inv));
+    uint8x16_t a1 = veorq_u8(vdupq_n_u8(z[2] & 0xff),  _gf256v_mul_neon2(vdupq_n_u8(z[3]&0xff),  inv));
+    uint8x16_t a2 = veorq_u8(vdupq_n_u8(z[4] & 0xff),  _gf256v_mul_neon2(vdupq_n_u8(z[5]&0xff),  inv));
+    uint8x16_t a3 = veorq_u8(vdupq_n_u8(z[6] & 0xff),  _gf256v_mul_neon2(vdupq_n_u8(z[7]&0xff),  inv));
+    uint8x16_t a4 = veorq_u8(vdupq_n_u8(z[8] & 0xff),  _gf256v_mul_neon2(vdupq_n_u8(z[9]&0xff),  inv));
+    uint8x16_t a5 = veorq_u8(vdupq_n_u8(z[10]& 0xff),  _gf256v_mul_neon2(vdupq_n_u8(z[11]&0xff), inv));
+    uint8x16_t a6 = veorq_u8(vdupq_n_u8(z[12]& 0xff),  _gf256v_mul_neon2(vdupq_n_u8(z[13]&0xff), inv));
+    uint8x16_t a7 = veorq_u8(vdupq_n_u8(z[14]& 0xff),  _gf256v_mul_neon2(vdupq_n_u8(z[15]&0xff), inv));
+
+    uint8x16_t b0 = veorq_u8(a0, _gf256v_mul_neon2(a1, inv2));
+    uint8x16_t b1 = veorq_u8(a2, _gf256v_mul_neon2(a3, inv2));
+    uint8x16_t b2 = veorq_u8(a4, _gf256v_mul_neon2(a5, inv2));
+    uint8x16_t b3 = veorq_u8(a6, _gf256v_mul_neon2(a7, inv2));
+
+    uint8x16_t c0 = veorq_u8(b0, _gf256v_mul_neon2(b1, inv4));
+    uint8x16_t c1 = veorq_u8(b2, _gf256v_mul_neon2(b3, inv4));
+
+    uint8x16_t tmp1 = veorq_u8(c0, _gf256v_mul_neon2(c1, inv8));
+
+    vst1q_u8(&out[start_i], tmp1);
+}
+
+static inline void calcDen_neon_16x(const uint8_t *beta_pad, const uint8_t *inv_j, uint8_t *out, int start_i) {
+    
+    uint8x16_t inv = vld1q_u8(&inv_j[start_i]);
+    uint8x16_t ones = vdupq_n_u8(1);
+
+    uint8x16_t t1  = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 1])));
+    uint8x16_t t2  = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 2])));
+    uint8x16_t t3  = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 3])));
+    uint8x16_t t4  = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 4])));
+    uint8x16_t t5  = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 5])));
+    uint8x16_t t6  = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 6])));
+    uint8x16_t t7  = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 7])));
+    uint8x16_t t8  = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 8])));
+    uint8x16_t t9  = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 9])));
+    uint8x16_t t10 = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 10])));
+    uint8x16_t t11 = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 11])));
+    uint8x16_t t12 = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 12])));
+    uint8x16_t t13 = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 13])));
+    uint8x16_t t14 = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 14])));
+
+    uint8x16_t m1_0 = _gf256v_mul_neon2(t1,  t2);
+    uint8x16_t m1_1 = _gf256v_mul_neon2(t3,  t4);
+    uint8x16_t m1_2 = _gf256v_mul_neon2(t5,  t6);
+    uint8x16_t m1_3 = _gf256v_mul_neon2(t7,  t8);
+    uint8x16_t m1_4 = _gf256v_mul_neon2(t9,  t10);
+    uint8x16_t m1_5 = _gf256v_mul_neon2(t11, t12);
+    uint8x16_t m1_6 = _gf256v_mul_neon2(t13, t14);
+
+    uint8x16_t m2_0 = _gf256v_mul_neon2(m1_0, m1_1);
+    uint8x16_t m2_1 = _gf256v_mul_neon2(m1_2, m1_3);
+    uint8x16_t m2_2 = _gf256v_mul_neon2(m1_4, m1_5);
+
+    uint8x16_t m3_0 = _gf256v_mul_neon2(m2_0, m2_1);
+    uint8x16_t m3_1 = _gf256v_mul_neon2(m2_2, m1_6);
+
+    uint8x16_t tmp2 = _gf256v_mul_neon2(m3_0, m3_1);
+    
+    vst1q_u8(&out[start_i], tmp2);
+}
 
 
 /**
@@ -453,11 +524,7 @@ static void compute_error_values(uint16_t *error_values, const uint16_t *z, cons
     uint16_t found;
     uint16_t mask1;
     uint16_t mask2;
-    uint16_t tmp1;
-    uint16_t tmp2;
-    uint16_t inverse;
-    uint16_t inverse_power_j;
-
+  
     // Compute the beta_{j_i} page 31 of the documentation
     delta_counter = 0;
     for (size_t i = 0; i < PARAM_N1; i++) {
@@ -472,22 +539,25 @@ static void compute_error_values(uint16_t *error_values, const uint16_t *z, cons
     }
     delta_real_value = delta_counter;
 
-    // Compute the e_{j_i} page 31 of the documentation
-    for (size_t i = 0; i < PARAM_DELTA; ++i) {
-        tmp1 = 1;
-        tmp2 = 1;
-        inverse = gf_inverse(beta_j[i]);
-        inverse_power_j = 1;
+    uint16_t tmp1_p[PARAM_DELTA];
+    uint16_t tmp2_p[PARAM_DELTA];
+    uint16_t inv_j[PARAM_DELTA] = {0};
 
-        for (size_t j = 1; j <= PARAM_DELTA; ++j) {
-            inverse_power_j = gf_mul(inverse_power_j, inverse);
-            tmp1 ^= gf_mul(inverse_power_j, z[j]);
-        }
-        for (size_t k = 1; k < PARAM_DELTA; ++k) {
-            tmp2 = gf_mul(tmp2, (1 ^ gf_mul(inverse, beta_j[(i + k) % PARAM_DELTA])));
-        }
-        mask1 = (uint16_t) (((int16_t) i - delta_real_value) >> 15); // i < delta_real_value
-        e_j[i] = mask1 & gf_mul(tmp1, gf_inverse(tmp2));
+    gf_inverse_all(beta_j, inv_j);
+
+    uint8_t beta_pad[PARAM_DELTA + 15];
+    for (size_t i = 0; i < PARAM_DELTA + 15; ++i) {
+        beta_pad[i] = beta_j[i % 15]; 
+    }
+
+    calcNum_neon_16x((const uint8_t *)inv_j, (const uint16_t *)z, (uint8_t *)tmp1_p, 0);
+    calcDen_neon_16x((const uint8_t *)beta_pad, (const uint8_t *)inv_j, (uint8_t *)tmp2_p, 0);
+
+    gf_inverse_all(tmp2_p, inv_j);
+
+    for (size_t i = 0; i < PARAM_DELTA; ++i) {
+        uint16_t mask1 = (uint16_t) (((int16_t) i - delta_real_value) >> 15); // i < delta_real_value
+        e_j[i] = mask1 & gf_mul(tmp1_p[i], inv_j[i]);
     }
 
     // Place the delta e_{j_i} values at the right coordinates of the output vector

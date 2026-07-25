@@ -1,56 +1,60 @@
 
-#include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdint.h>  // uint64_t
-#include <stdlib.h>  // rand()
-
-#include "benchmark.h"
-
-
-#define TEST_RUN 1000
-
+#include <stdio.h>
 
 #include "parameters.h"
-
 #include "gf2x.h"
 
+#define CORRECT_FOR_OVERHEAD
+#include "bench.h"
 
-int main(void) {
+uint64_t poly_a[VEC_N_SIZE_64] = {0};
+uint64_t poly_b[VEC_N_SIZE_64] = {0};
+uint64_t poly_c[VEC_N_SIZE_64] = {0};
 
-    uint64_t bm1[TEST_RUN]; int len1[1] = {0};
-    bm_init(NULL);
-
-    char msg[256];
-
-    for (unsigned i = 0; i < 256; i++) {
-        msg[i] = i;
+void setup_poly_state(void) {
+    for(size_t j = 0; j < VEC_N_SIZE_64; j++) {
+        poly_a[j] = rand();
+        poly_b[j] = rand();
     }
+}
 
-    printf("benchmark for gf2x [%d] bits ->[%d] u64 \n\n", PARAM_N , VEC_N_SIZE_64 );
-
-    uint64_t poly_a[VEC_N_SIZE_64];
-    uint64_t poly_b[VEC_N_SIZE_64];
-    uint64_t poly_c[VEC_N_SIZE_64];
-    uint64_t poly_d[VEC_N_SIZE_64] = {0};
-
-
-
-    printf("===========  benchmark vect_mul()  ================\n\n");
-    for (unsigned i = 0; i < TEST_RUN; i++) {
-        for(size_t j=0;j<(sizeof(poly_d)/sizeof(uint64_t));j++) poly_a[j] = rand();
-        for(size_t j=0;j<(sizeof(poly_d)/sizeof(uint64_t));j++) poly_b[j] = rand();
-        
-        REC_TIMING(bm1, len1, {
-            vect_mul( (void*)poly_c , (void*)poly_a , (void*)poly_b );
-        });
-        for(size_t j=0;j<(sizeof(poly_d)/sizeof(uint64_t));j++) poly_d[j] ^= poly_c[j];
+static inline void bench_vect_mul(size_t iters) {
+    for (size_t i = 0; i < iters; i++) {
+        vect_mul((void*)poly_c, (void*)poly_a, (void*)poly_b);
     }
-    report(msg, 256, bm1, len1[0]);
-    printf("result: %s\n\n", msg );
-    printf("XX: %x\n", (unsigned) (poly_d[0]&0xffff) );
+}
 
+#define WARMUP_ITERS 8
+#define BENCH_ITERS 32
+#define RUN_ITERS 500 
+
+int bench_main(int argc, char *argv[]) {
+    (void)argc;
+    (void)argv;
+
+    uint64_t cycles_min, cycles_median;
+
+    printf("Benchmark for gf2x [%d] bits -> [%d] u64 \n\n", PARAM_N, VEC_N_SIZE_64);
+    printf("Generating polynomials and preparing the state...\n");
+    
+    setup_poly_state();
+
+    printf("\n----------------------------------------------------------------------\n");
+    printf("Results\n");
+    printf("----------------------------------------------------------------------\n");
+
+    bench_run(bench_vect_mul(RUN_ITERS), BENCH_ITERS, WARMUP_ITERS, cycles_min, cycles_median);
+    
+    printf("[GF2X] vect_mul        : %.0f ciclos\n", (double)cycles_min / RUN_ITERS);
+
+    printf("----------------------------------------------------------------------\n");
+
+    (void)cycles_median;
+
+    printf("XX: %x\n", (unsigned)(poly_c[0] & 0xffff));
 
     return 0;
 }
-

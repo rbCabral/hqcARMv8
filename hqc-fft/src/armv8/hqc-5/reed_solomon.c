@@ -399,12 +399,12 @@ static const uint16x8_t alpha_ij256_4[178] = {
  * Coefficients of polynomial G
  * stored in 256-bit values
  **/
-static const uint16x8_t param256[8] = {
-    {0x0031, 0x00a7, 0x0031, 0x0027,  0x00c8, 0x0079, 0x007c, 0x005b}, {0x00f0, 0x003f, 0x0094, 0x0047, 0x0096, 0x007b, 0x0057, 0x0065 },
-    {0x0020, 0x00d7, 0x009f, 0x0047,  0x00c9, 0x0073, 0x0061, 0x00d2}, {0x00ba, 0x00b7, 0x008d, 0x00d9, 0x007b, 0x000c, 0x001f, 0x00f3 },
-    {0x00b4, 0x00db, 0x0098, 0x00ef,  0x0063, 0x008d, 0x0004, 0x00f6}, {0x00bf, 0x0090, 0x0008, 0x00e8, 0x002f, 0x001b, 0x008d, 0x00b2 },
-    {0x0082, 0x0040, 0x007c, 0x002f,  0x0027, 0x00bc, 0x00d8, 0x0030}, {0x00c7, 0x00bb, 0x0001, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 }
-};
+// static const uint16x8_t param256[8] = {
+//     {0x0031, 0x00a7, 0x0031, 0x0027,  0x00c8, 0x0079, 0x007c, 0x005b}, {0x00f0, 0x003f, 0x0094, 0x0047, 0x0096, 0x007b, 0x0057, 0x0065 },
+//     {0x0020, 0x00d7, 0x009f, 0x0047,  0x00c9, 0x0073, 0x0061, 0x00d2}, {0x00ba, 0x00b7, 0x008d, 0x00d9, 0x007b, 0x000c, 0x001f, 0x00f3 },
+//     {0x00b4, 0x00db, 0x0098, 0x00ef,  0x0063, 0x008d, 0x0004, 0x00f6}, {0x00bf, 0x0090, 0x0008, 0x00e8, 0x002f, 0x001b, 0x008d, 0x00b2 },
+//     {0x0082, 0x0040, 0x007c, 0x002f,  0x0027, 0x00bc, 0x00d8, 0x0030}, {0x00c7, 0x00bb, 0x0001, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 }
+// };
 
 static const uint8_t gen_mat[32*64] __attribute__((aligned(32)))  = {
 0x31, 0xa7, 0x31, 0x27, 0xc8, 0x79, 0x7c, 0x5b, 0xf0, 0x3f, 0x94, 0x47, 0x96, 0x7b, 0x57, 0x65, 0x20, 0xd7, 0x9f, 0x47, 0xc9, 0x73, 0x61, 0xd2, 0xba, 0xb7, 0x8d, 0xd9, 0x7b, 0xc, 0x1f, 0xf3, 0xb4, 0xdb, 0x98, 0xef, 0x63, 0x8d, 0x4, 0xf6, 0xbf, 0x90, 0x8, 0xe8, 0x2f, 0x1b, 0x8d, 0xb2, 0x82, 0x40, 0x7c, 0x2f, 0x27, 0xbc, 0xd8, 0x30, 0xc7, 0xbb, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 
@@ -756,6 +756,126 @@ static void compute_z_poly(uint16_t *z, const uint16_t *sigma, uint16_t degree, 
 
 
 
+static inline void calcNum_neon_16x(const uint8_t *inv_j, const uint16_t *z, uint8_t *out, int start_i) {
+    
+    uint8x16_t inv = vld1q_u8(&inv_j[start_i]);
+    
+    uint8x16_t inv2  = _gf256v_mul_neon2(inv,   inv);
+    uint8x16_t inv4  = _gf256v_mul_neon2(inv2,  inv2);
+    uint8x16_t inv8  = _gf256v_mul_neon2(inv4,  inv4);
+    uint8x16_t inv16 = _gf256v_mul_neon2(inv8,  inv8);
+
+    uint8x16_t ones = vdupq_n_u8(1);
+
+    uint8x16_t a0  = veorq_u8(ones,                     _gf256v_mul_neon2(vdupq_n_u8(z[1]&0xff),  inv));
+    uint8x16_t a1  = veorq_u8(vdupq_n_u8(z[2] & 0xff),  _gf256v_mul_neon2(vdupq_n_u8(z[3]&0xff),  inv));
+    uint8x16_t a2  = veorq_u8(vdupq_n_u8(z[4] & 0xff),  _gf256v_mul_neon2(vdupq_n_u8(z[5]&0xff),  inv));
+    uint8x16_t a3  = veorq_u8(vdupq_n_u8(z[6] & 0xff),  _gf256v_mul_neon2(vdupq_n_u8(z[7]&0xff),  inv));
+    uint8x16_t a4  = veorq_u8(vdupq_n_u8(z[8] & 0xff),  _gf256v_mul_neon2(vdupq_n_u8(z[9]&0xff),  inv));
+    uint8x16_t a5  = veorq_u8(vdupq_n_u8(z[10]& 0xff),  _gf256v_mul_neon2(vdupq_n_u8(z[11]&0xff), inv));
+    uint8x16_t a6  = veorq_u8(vdupq_n_u8(z[12]& 0xff),  _gf256v_mul_neon2(vdupq_n_u8(z[13]&0xff), inv));
+    uint8x16_t a7  = veorq_u8(vdupq_n_u8(z[14]& 0xff),  _gf256v_mul_neon2(vdupq_n_u8(z[15]&0xff), inv));
+    uint8x16_t a8  = veorq_u8(vdupq_n_u8(z[16]& 0xff),  _gf256v_mul_neon2(vdupq_n_u8(z[17]&0xff), inv));
+    uint8x16_t a9  = veorq_u8(vdupq_n_u8(z[18]& 0xff),  _gf256v_mul_neon2(vdupq_n_u8(z[19]&0xff), inv));
+    uint8x16_t a10 = veorq_u8(vdupq_n_u8(z[20]& 0xff),  _gf256v_mul_neon2(vdupq_n_u8(z[21]&0xff), inv));
+    uint8x16_t a11 = veorq_u8(vdupq_n_u8(z[22]& 0xff),  _gf256v_mul_neon2(vdupq_n_u8(z[23]&0xff), inv));
+    uint8x16_t a12 = veorq_u8(vdupq_n_u8(z[24]& 0xff),  _gf256v_mul_neon2(vdupq_n_u8(z[25]&0xff), inv));
+    uint8x16_t a13 = veorq_u8(vdupq_n_u8(z[26]& 0xff),  _gf256v_mul_neon2(vdupq_n_u8(z[27]&0xff), inv));
+    uint8x16_t a14 = veorq_u8(vdupq_n_u8(z[28]& 0xff),  _gf256v_mul_neon2(vdupq_n_u8(z[29]&0xff), inv));
+
+    uint8x16_t b0 = veorq_u8(a0,  _gf256v_mul_neon2(a1,  inv2));
+    uint8x16_t b1 = veorq_u8(a2,  _gf256v_mul_neon2(a3,  inv2));
+    uint8x16_t b2 = veorq_u8(a4,  _gf256v_mul_neon2(a5,  inv2));
+    uint8x16_t b3 = veorq_u8(a6,  _gf256v_mul_neon2(a7,  inv2));
+    uint8x16_t b4 = veorq_u8(a8,  _gf256v_mul_neon2(a9,  inv2));
+    uint8x16_t b5 = veorq_u8(a10, _gf256v_mul_neon2(a11, inv2));
+    uint8x16_t b6 = veorq_u8(a12, _gf256v_mul_neon2(a13, inv2));
+    uint8x16_t b7 = a14; 
+
+    uint8x16_t c0 = veorq_u8(b0, _gf256v_mul_neon2(b1, inv4));
+    uint8x16_t c1 = veorq_u8(b2, _gf256v_mul_neon2(b3, inv4));
+    uint8x16_t c2 = veorq_u8(b4, _gf256v_mul_neon2(b5, inv4));
+    uint8x16_t c3 = veorq_u8(b6, _gf256v_mul_neon2(b7, inv4));
+
+    uint8x16_t d0 = veorq_u8(c0, _gf256v_mul_neon2(c1, inv8));
+    uint8x16_t d1 = veorq_u8(c2, _gf256v_mul_neon2(c3, inv8));
+
+    uint8x16_t tmp1 = veorq_u8(d0, _gf256v_mul_neon2(d1, inv16));
+
+    vst1q_u8(&out[start_i], tmp1);
+}
+
+static inline void calcDen_neon_16x(const uint8_t *beta_pad, const uint8_t *inv_j, uint8_t *out, int start_i) {
+    
+    uint8x16_t inv = vld1q_u8(&inv_j[start_i]);
+    uint8x16_t ones = vdupq_n_u8(1);
+
+    uint8x16_t t1  = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 1])));
+    uint8x16_t t2  = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 2])));
+    uint8x16_t t3  = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 3])));
+    uint8x16_t t4  = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 4])));
+    uint8x16_t t5  = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 5])));
+    uint8x16_t t6  = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 6])));
+    uint8x16_t t7  = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 7])));
+    uint8x16_t t8  = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 8])));
+    uint8x16_t t9  = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 9])));
+    uint8x16_t t10 = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 10])));
+    uint8x16_t t11 = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 11])));
+    uint8x16_t t12 = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 12])));
+    uint8x16_t t13 = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 13])));
+    uint8x16_t t14 = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 14])));
+    uint8x16_t t15 = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 15])));
+    uint8x16_t t16 = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 16])));
+    uint8x16_t t17 = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 17])));
+    uint8x16_t t18 = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 18])));
+    uint8x16_t t19 = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 19])));
+    uint8x16_t t20 = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 20])));
+    uint8x16_t t21 = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 21])));
+    uint8x16_t t22 = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 22])));
+    uint8x16_t t23 = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 23])));
+    uint8x16_t t24 = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 24])));
+    uint8x16_t t25 = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 25])));
+    uint8x16_t t26 = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 26])));
+    uint8x16_t t27 = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 27])));
+    uint8x16_t t28 = veorq_u8(ones, _gf256v_mul_neon2(inv, vld1q_u8(&beta_pad[start_i + 28])));
+
+    uint8x16_t m1_0 = _gf256v_mul_neon2(t1,  t2);
+    uint8x16_t m1_1 = _gf256v_mul_neon2(t3,  t4);
+    uint8x16_t m1_2 = _gf256v_mul_neon2(t5,  t6);
+    uint8x16_t m1_3 = _gf256v_mul_neon2(t7,  t8);
+    uint8x16_t m1_4 = _gf256v_mul_neon2(t9,  t10);
+    uint8x16_t m1_5 = _gf256v_mul_neon2(t11, t12);
+    uint8x16_t m1_6 = _gf256v_mul_neon2(t13, t14);
+    uint8x16_t m1_7 = _gf256v_mul_neon2(t15, t16);
+    uint8x16_t m1_8 = _gf256v_mul_neon2(t17, t18);
+    uint8x16_t m1_9 = _gf256v_mul_neon2(t19, t20);
+    uint8x16_t m1_10= _gf256v_mul_neon2(t21, t22);
+    uint8x16_t m1_11= _gf256v_mul_neon2(t23, t24);
+    uint8x16_t m1_12= _gf256v_mul_neon2(t25, t26);
+    uint8x16_t m1_13= _gf256v_mul_neon2(t27, t28);
+
+    uint8x16_t m2_0 = _gf256v_mul_neon2(m1_0, m1_1);
+    uint8x16_t m2_1 = _gf256v_mul_neon2(m1_2, m1_3);
+    uint8x16_t m2_2 = _gf256v_mul_neon2(m1_4, m1_5);
+    uint8x16_t m2_3 = _gf256v_mul_neon2(m1_6, m1_7);
+    uint8x16_t m2_4 = _gf256v_mul_neon2(m1_8, m1_9);
+    uint8x16_t m2_5 = _gf256v_mul_neon2(m1_10,m1_11);
+    uint8x16_t m2_6 = _gf256v_mul_neon2(m1_12,m1_13);
+
+    uint8x16_t m3_0 = _gf256v_mul_neon2(m2_0, m2_1);
+    uint8x16_t m3_1 = _gf256v_mul_neon2(m2_2, m2_3);
+    uint8x16_t m3_2 = _gf256v_mul_neon2(m2_4, m2_5);
+    uint8x16_t m3_3 = m2_6;
+
+    uint8x16_t m4_0 = _gf256v_mul_neon2(m3_0, m3_1);
+    uint8x16_t m4_1 = _gf256v_mul_neon2(m3_2, m3_3);
+
+    uint8x16_t tmp2 = _gf256v_mul_neon2(m4_0, m4_1);
+    
+    vst1q_u8(&out[start_i], tmp2);
+}
+
+
 /**
  * @brief Computes the error values
  *
@@ -775,10 +895,6 @@ static void compute_error_values(uint16_t *error_values, const uint16_t *z, cons
     uint16_t found;
     uint16_t mask1;
     uint16_t mask2;
-    uint16_t tmp1;
-    uint16_t tmp2;
-    uint16_t inverse;
-    uint16_t inverse_power_j;
 
     // Compute the beta_{j_i} page 31 of the documentation
     delta_counter = 0;
@@ -794,23 +910,28 @@ static void compute_error_values(uint16_t *error_values, const uint16_t *z, cons
     }
     delta_real_value = delta_counter;
 
-    // Compute the e_{j_i} page 31 of the documentation
-    for (size_t i = 0; i < PARAM_DELTA; ++i) {
-        tmp1 = 1;
-        tmp2 = 1;
-        inverse = gf_inverse(beta_j[i]);
-        inverse_power_j = 1;
+    uint16_t tmp1_p[PARAM_DELTA];
+    uint16_t tmp2_p[PARAM_DELTA];
+    uint16_t inv_j[PARAM_DELTA] = {0};
 
-        for (size_t j = 1; j <= PARAM_DELTA; ++j) {
-            inverse_power_j = gf_mul(inverse_power_j, inverse);
-            tmp1 ^= gf_mul(inverse_power_j, z[j]);
-        }
-        for (size_t k = 1; k < PARAM_DELTA; ++k) {
-            tmp2 = gf_mul(tmp2, (1 ^ gf_mul(inverse, beta_j[(i + k) % PARAM_DELTA])));
-        }
-        mask1 = (uint16_t) (((int16_t) i - delta_real_value) >> 15); // i < delta_real_value
-        e_j[i] = mask1 & gf_mul(tmp1, gf_inverse(tmp2));
+    gf_inverse_all(beta_j, inv_j);
+
+    uint8_t beta_pad[PARAM_DELTA + 45];
+    for (size_t i = 0; i < PARAM_DELTA + 45; ++i) {
+        beta_pad[i] = beta_j[i % PARAM_DELTA]; 
     }
+
+    calcNum_neon_16x((const uint8_t*)inv_j, (const uint16_t*)z, (uint8_t*)tmp1_p, 0);
+    calcDen_neon_16x((const uint8_t*)beta_pad, (const uint8_t*)inv_j, (uint8_t*)tmp2_p, 0);
+
+    gf_inverse_all(tmp2_p, inv_j);
+
+         for (size_t i = 0; i < PARAM_DELTA; ++i) {
+        uint16_t mask1 = (uint16_t) (((int16_t) i - delta_real_value) >> 15); // i < delta_real_value
+        e_j[i] = mask1 & gf_mul(tmp1_p[i], inv_j[i]);
+    }
+
+
 
     // Place the delta e_{j_i} values at the right coordinates of the output vector
     delta_counter = 0;

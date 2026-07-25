@@ -23,16 +23,15 @@ static const uint16_t values[16] = {
     1 << 12, 1 << 13, 1 << 14, 1 << 15
 };
 
-static inline uint16x8_t bitmask_from_16(uint16_t x, uint16_t n)
+
+static inline uint16x8_t bitmask_from_16_opt(uint16_t x, uint16x8_t bitmask)
 {
     uint16x8_t full_length = vdupq_n_u16(x);
-
-    uint16x8_t bitmask = vld1q_u16(values + n);
-
     uint16x8_t x_mask = vandq_u16(full_length, bitmask);
 
-    uint16x8_t result = vceqq_u16(x_mask, vdupq_n_u16(0));
-    result = vaddq_u16(result, vdupq_n_u16(1));
+    uint16x8_t cmp = vceqq_u16(x_mask, bitmask);
+
+    uint16x8_t result = vshrq_n_u16(cmp, 15);
 
     return result;
 }
@@ -95,35 +94,31 @@ inline void encode(codeword *word, int32_t message) {
  */
 static inline void expand_and_sum(expandedCodeword *dst, codeword src[]) {
     
-#if defined(NEW_CODE)
-    for(size_t part = 0; part < 8; part++) {
+    const uint16x8_t mask_low  = vld1q_u16(values + 0);
+    const uint16x8_t mask_high = vld1q_u16(values + 8);
 
-        uint16x8_t bit_array1 = bitmask_from_16(src->u16[part], 0);
-        uint16x8_t bit_array2 = bitmask_from_16(src->u16[part], 8);
-        for (size_t copy = 1; copy < MULTIPLICITY; copy++) {
-            // bit_array = _mm256_add_epi16(bit_array, bitmask_from_16(src[copy].u16[part]));
-            bit_array1 = vaddq_u16(bit_array1, bitmask_from_16(src[copy].u16[part], 0));
-            bit_array2 = vaddq_u16(bit_array2, bitmask_from_16(src[copy].u16[part], 8));
-        }
-        vst1q_u16((uint16_t *) dst -> i16 + part * 16, bit_array1);
-        vst1q_u16((uint16_t *) dst -> i16 + part * 16 + 8, bit_array2);
+    uint16x8_t acc1[8];
+    uint16x8_t acc2[8];
+
+    for(size_t part = 0; part < 8; part++) {
+        acc1[part] = bitmask_from_16_opt(src[0].u16[part], mask_low);
+        acc2[part] = bitmask_from_16_opt(src[0].u16[part], mask_high);
     }
-#else
-    // start converting the first copy
-    for (size_t part = 0; part < 8; part++) {
-        for (size_t i = 0; i < 16; ++i) {
-            dst->i16[(part << 4) + i] = src->u16[part] >> i & 1;
-        }
-    }
-    // sum the rest of the copies
+
     for (size_t copy = 1; copy < MULTIPLICITY; copy++) {
-        for (size_t part = 0 ; part < 8 ; part++) {
-            for (size_t i = 0; i < 16; ++i) {
-                dst->i16[(part << 4) + i] += src[copy].u16[part] >> i & 1;
-            }
+        for(size_t part = 0; part < 8; part++) {
+            uint16x8_t bit_array1 = bitmask_from_16_opt(src[copy].u16[part], mask_low);
+            uint16x8_t bit_array2 = bitmask_from_16_opt(src[copy].u16[part], mask_high);
+        
+            acc1[part] = vaddq_u16(acc1[part], bit_array1);
+            acc2[part] = vaddq_u16(acc2[part], bit_array2);
         }
     }
-#endif
+
+    for(size_t part = 0; part < 8; part++) {
+        vst1q_u16((uint16_t *) dst->i16 + part * 16, acc1[part]);
+        vst1q_u16((uint16_t *) dst->i16 + part * 16 + 8, acc2[part]);
+    }
 }
 
 
